@@ -1,10 +1,8 @@
 mod sys;
 
-pub fn main() {
-    // TODO: Call WSAStartup!
-    
-    match sys::create_socket() {
-        Ok(_) => println!("success"),
-        Err(e) => println!("ERROR: {e}"),
-    }
+pub fn main() -> anyhow::Result<()> {
+    sys::wsa_startup()?;
+    let _sock = sys::create_raw_icmp_socket()?;
+    // TODO: Set IP_HDRINCL socket option
+    Ok(())
 }
