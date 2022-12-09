@@ -1,11 +1,36 @@
 use std::fmt;
 use std::mem::MaybeUninit;
+use std::net::Ipv4Addr;
 
 use widestring::U16CStr;
 use windows::core::*;
+use windows::Win32::NetworkManagement::IpHelper::*;
 use windows::Win32::Networking::WinSock::*;
 use windows::Win32::System::Diagnostics::Debug::*;
 use windows::Win32::System::Memory::*;
+
+#[derive(Debug)]
+pub enum Error {
+    CreateSocket(Win32Error),
+    SetIpHdrSockOpt(Win32Error),
+    SendIcmpEcho(Win32Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::CreateSocket(e) => write!(f, "failed to create the socket: {e}"),
+            Error::SetIpHdrSockOpt(e) => {
+                write!(f, "failed to set the IP_HDRINCL socket option: {e}")
+            }
+            Error::SendIcmpEcho(e) => write!(f, "failed to send the ICMP echo request: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Win32Error {
@@ -20,6 +45,15 @@ impl fmt::Display for Win32Error {
 }
 
 impl std::error::Error for Win32Error {}
+
+impl Win32Error {
+    fn new<S: Into<String>>(code: u32, msg: S) -> Win32Error {
+        Win32Error {
+            code,
+            msg: msg.into(),
+        }
+    }
+}
 
 type Win32Result<T> = std::result::Result<T, Win32Error>;
 
@@ -77,6 +111,12 @@ macro_rules! win32_eq_zero {
     };
 }
 
+macro_rules! win32_ne_zero {
+    ( $call:expr ) => {
+        win32_ne!($call, 0)
+    };
+}
+
 pub fn wsa_startup() -> Win32Result<()> {
     let mut wsa_data = MaybeUninit::<WSADATA>::uninit();
     let res = win32_eq_zero!(WSAStartup(
@@ -87,20 +127,39 @@ pub fn wsa_startup() -> Win32Result<()> {
     res
 }
 
-pub fn create_raw_icmp_socket() -> Win32Result<SOCKET> {
+pub fn create_raw_icmp_socket() -> Result<SOCKET> {
     let sock = win32_ne!(
         WSASocketW(
             AF_INET.0 as i32,
             SOCK_RAW as i32,
-            IPPROTO_ICMP.0,
+            IPPROTO_RAW.0,
             None,
             0,
             WSA_FLAG_OVERLAPPED
         ),
         INVALID_SOCKET
-    )?;
-    win32_eq_zero!(
-        setsockopt(sock, IPPROTO_IP as i32, IP_HDRINCL as i32, Some(&1))
-    )?;
+    )
+    .map_err(|e| Error::CreateSocket(e))?;
+    // NOTE: Must run this program as an Administrator to set this option.
+    win32_eq_zero!(setsockopt(
+        sock,
+        IPPROTO_IP as i32,
+        IP_HDRINCL as i32,
+        Some(&1i32.to_le_bytes())
+    ))
+    .map_err(|e| Error::SetIpHdrSockOpt(e))?;
     Ok(sock)
+}
+
+pub fn send_ping(ttl: u8, ) -> Result<()> {
+    let icmp_file = unsafe {
+        IcmpCreateFile().map_err(|e| {
+            Error::SendIcmpEcho(Win32Error::new(e.code().0 as u32, e.message().to_string()))
+        })?
+    };
+    let ip_options = IP_OPTION_INFORMATION { Ttl: ttl, Tos: 0, Flags: 0, OptionsSize: 0, OptionsData: std::ptr::null() as *mut u8 };
+    win32_ne_zero!(
+        IcmpSendEcho(icmp_file, IPV4Addr::new(192, 168, 1, 1).into(), )
+    )
+    Ok(())
 }
