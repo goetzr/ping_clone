@@ -1,3 +1,4 @@
+use std::ffi::c_void;
 use std::fmt;
 use std::mem::MaybeUninit;
 use std::net::Ipv4Addr;
@@ -158,17 +159,27 @@ fn ascii_to_wide(data: &str) -> Vec<u16> {
     result
 }
 
-pub fn resolve_hostname(hostname: &str) -> Win32Result<String> {
+// fn ascii_to_utf8(data: &[u8]) -> String {
+//     let mut result = String::new();
+//     unsafe {
+//         for &b in data {
+//             result.push(char::from_u32_unchecked(b as u32));
+//         }
+//         result
+//     }
+// }
+
+pub fn resolve_hostname(hostname: &str) -> Win32Result<Ipv4Addr> {
     let hostname = ascii_to_wide(hostname);
     let hostname = PCWSTR::from_raw(hostname.as_ptr());
     unsafe {
-        let mut query_results: usize = 0;
+        let mut query_results = MaybeUninit::<&DNS_RECORDA>::uninit();
         DnsQuery_W(
             hostname,
             DNS_TYPE_A,
             DNS_QUERY_STANDARD,
             None,
-            Some(std::mem::transmute::<&usize, *mut *mut DNS_RECORDA>(&query_results)),
+            Some(query_results.as_mut_ptr() as *mut *mut DNS_RECORDA),
             None,
         )
         .ok()
@@ -176,9 +187,14 @@ pub fn resolve_hostname(hostname: &str) -> Win32Result<String> {
             code: e.code().0 as u32,
             msg: e.message().to_string(),
         })?;
-        // TODO: Call DnsRecordListFree
+
+        let query_results = query_results.assume_init();
+        let ip_addr = Ipv4Addr::from(query_results.Data.A.IpAddress.swap_bytes());
+        
+        DnsFree(Some(query_results as *const DNS_RECORDA as *const c_void), DnsFreeRecordList);
+
+        Ok(ip_addr)
     }
-    unimplemented!();
 }
 
 // pub fn send_ping(dst_addr: IPV4Addr, ttl: u8) -> Result<()> {
