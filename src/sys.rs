@@ -28,7 +28,9 @@ impl fmt::Display for Error {
             Error::SetIpHdrSockOpt(e) => {
                 write!(f, "failed to set the IP_HDRINCL socket option: {e}")
             }
-            Error::ResolveIpAddr(e) => write!(f, "failed to resolve the hostname to an IP address: {e}"),
+            Error::ResolveIpAddr(e) => {
+                write!(f, "failed to resolve the hostname to an IP address: {e}")
+            }
             Error::OpenIcmpHandle(e) => write!(f, "failed to open an ICMP handle: {e}"),
             Error::SendIcmpEcho(e) => write!(f, "failed to send the ICMP echo request: {e}"),
         }
@@ -171,7 +173,7 @@ fn ascii_to_wide(data: &str) -> Vec<u16> {
 //     }
 // }
 
-pub fn resolve_hostname(hostname: &str) -> Error::ResolveIpAddr<Ipv4Addr> {
+pub fn resolve_hostname(hostname: &str) -> Result<Ipv4Addr> {
     let hostname = ascii_to_wide(hostname);
     let hostname = PCWSTR::from_raw(hostname.as_ptr());
     unsafe {
@@ -185,42 +187,66 @@ pub fn resolve_hostname(hostname: &str) -> Error::ResolveIpAddr<Ipv4Addr> {
             None,
         )
         .ok()
-        .map_err(|e| Error::ResolveIpAddr(Win32Error {
-            code: e.code().0 as u32,
-            msg: e.message().to_string(),
-        }))?;
+        .map_err(|e| {
+            Error::ResolveIpAddr(Win32Error {
+                code: e.code().0 as u32,
+                msg: e.message().to_string(),
+            })
+        })?;
 
         let query_results = query_results.assume_init();
         let ip_addr = Ipv4Addr::from(query_results.Data.A.IpAddress.swap_bytes());
-        
-        DnsFree(Some(query_results as *const DNS_RECORDA as *const c_void), DnsFreeRecordList);
+
+        DnsFree(
+            Some(query_results as *const DNS_RECORDA as *const c_void),
+            DnsFreeRecordList,
+        );
 
         Ok(ip_addr)
     }
 }
 
-pub fn send_ping(dst_addr: Ip4Addr, ttl: u8, timeout: u32) -> Result<()> {
+pub fn send_ping(dst_addr: Ipv4Addr, ttl: u8, timeout: u32) -> Result<ICMP_ECHO_REPLY> {
     let icmp_handle = unsafe {
         IcmpCreateFile().map_err(|e| {
             Error::OpenIcmpHandle(Win32Error::new(e.code().0 as u32, e.message().to_string()))
         })?
     };
 
-    let request_data: Vec<u8>;
-    for n in 0..32 {
-        let data: u8 = 65 + n % 26;
-        request_data.push(data);
-    }
+    let request_data: Vec<u8> = (0..32).into_iter().map(|n| 65 + n %26).collect();
     let sz_request_data = request_data.len() * std::mem::size_of::<u8>();
-    let request_options = IP_OPTION_INFORMATION { Ttl: ttl, Tos: 0, Flags: 0, OptionsSize: 0, OptionsData: std::ptr::null() as *mut u8 };
+    let request_options = IP_OPTION_INFORMATION {
+        Ttl: ttl,
+        Tos: 0,
+        Flags: 0,
+        OptionsSize: 0,
+        OptionsData: std::ptr::null::<u8>() as *mut u8,
+    };
     let sz_reply_buf = std::mem::size_of::<ICMP_ECHO_REPLY>() + sz_request_data;
-    // TODO: How to allocate raw buffer with the proper alignment?
-    let num_replies = win32_ne_zero!(
-        IcmpSendEcho(icmp_handle, dst_addr.into(), request_data.as_ptr() as *const c_void,
-            sz_request_data as u16, Some(&request_options as *const IP_OPTION_INFORMATION),
-            std::ptr::null as *mut c_void, sz_reply_buf as u32, timeout)
-    ).map_err(|e| Error::SendIcmpEcho(e))?;
-    Ok(())
+    let reply_buf_layout = std::alloc::Layout::from_size_align(
+        std::mem::size_of::<ICMP_ECHO_REPLY>() + sz_request_data,
+        std::mem::align_of::<ICMP_ECHO_REPLY>(),
+    )
+    .expect("ICMP_ECHO_REPLY layout");
+    let reply_buf = unsafe { std::alloc::alloc(reply_buf_layout) };
+
+    let num_replies = win32_ne_zero!(IcmpSendEcho(
+        icmp_handle,
+        Into::<u32>::into(dst_addr).swap_bytes(),
+        request_data.as_ptr() as *const c_void,
+        sz_request_data as u16,
+        Some(&request_options as *const IP_OPTION_INFORMATION),
+        reply_buf as *mut c_void,
+        sz_reply_buf as u32,
+        timeout * 1000
+    ))
+    .map_err(|e| Error::SendIcmpEcho(e))?;
+
+    assert_eq!(num_replies, 1);
+    let reply = unsafe { *(reply_buf as *const ICMP_ECHO_REPLY) };
+    unsafe { std::alloc::dealloc(reply_buf, reply_buf_layout) };
+
+    Ok(reply)
 }
 
 mod test {
