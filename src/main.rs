@@ -1,6 +1,17 @@
 mod sys;
 
 pub fn main() -> anyhow::Result<()> {
+    /*
+    Options to implement:
+        -t,
+        -a,
+        -n count,
+        -l size,
+        -f,
+        -i TTL,
+        -w timeout,
+        -S srcaddr
+     */
     let hostname = "www.google.com";
     let ttl = 100;
     let timeout = 4;

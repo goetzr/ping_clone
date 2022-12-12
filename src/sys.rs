@@ -3,19 +3,15 @@ use std::fmt;
 use std::mem::MaybeUninit;
 use std::net::Ipv4Addr;
 
-use widestring::U16CStr;
 use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::NetworkManagement::Dns::*;
 use windows::Win32::NetworkManagement::IpHelper::*;
-use windows::Win32::Networking::WinSock::*;
 use windows::Win32::System::Diagnostics::Debug::*;
 use windows::Win32::System::Memory::*;
 
 #[derive(Debug)]
 pub enum Error {
-    CreateSocket(Win32Error),
-    SetIpHdrSockOpt(Win32Error),
     ResolveIpAddr(Win32Error),
     OpenIcmpHandle(Win32Error),
     SendIcmpEcho(Win32Error),
@@ -24,10 +20,6 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::CreateSocket(e) => write!(f, "failed to create the socket: {e}"),
-            Error::SetIpHdrSockOpt(e) => {
-                write!(f, "failed to set the IP_HDRINCL socket option: {e}")
-            }
             Error::ResolveIpAddr(e) => {
                 write!(f, "failed to resolve the hostname to an IP address: {e}")
             }
@@ -64,8 +56,6 @@ impl Win32Error {
     }
 }
 
-type Win32Result<T> = std::result::Result<T, Win32Error>;
-
 fn make_win32_error_with_code(err: u32) -> Win32Error {
     unsafe {
         let mut buf: usize = 0;
@@ -93,17 +83,17 @@ fn make_win32_error() -> Win32Error {
     make_win32_error_with_code(unsafe { GetLastError().0 as u32 })
 }
 
-macro_rules! win32_eq {
-    ( $call:expr, $sentinel:pat ) => {{
-        unsafe {
-            let ret = $call;
-            match ret {
-                $sentinel => Ok(()),
-                _ => Err(make_win32_error()),
-            }
-        }
-    }};
-}
+// macro_rules! win32_eq {
+//     ( $call:expr, $sentinel:pat ) => {{
+//         unsafe {
+//             let ret = $call;
+//             match ret {
+//                 $sentinel => Ok(()),
+//                 _ => Err(make_win32_error()),
+//             }
+//         }
+//     }};
+// }
 
 macro_rules! win32_ne {
     ( $call:expr, $sentinel:pat ) => {{
@@ -117,38 +107,16 @@ macro_rules! win32_ne {
     }};
 }
 
-macro_rules! win32_eq_zero {
-    ( $call:expr ) => {
-        win32_eq!($call, 0)
-    };
-}
+// macro_rules! win32_eq_zero {
+//     ( $call:expr ) => {
+//         win32_eq!($call, 0)
+//     };
+// }
 
 macro_rules! win32_ne_zero {
     ( $call:expr ) => {
         win32_ne!($call, 0)
     };
-}
-
-// macro_rules! win32_is_ok {
-//     ( $call:expr ) => {{
-//         unsafe {
-//             let ret = $call;
-//             match ret.ok() {
-//                 Err(e) => Err(make_win32_error_with_code(e.0)),
-//                 _ => Ok(()),
-//             }
-//         }
-//     }};
-// }
-
-pub fn wsa_startup() -> Win32Result<()> {
-    let mut wsa_data = MaybeUninit::<WSADATA>::uninit();
-    let res = win32_eq_zero!(WSAStartup(
-        2 << 8 | 2,
-        wsa_data.as_mut_ptr() as *mut WSADATA
-    ));
-    let _ = unsafe { wsa_data.assume_init() };
-    res
 }
 
 fn ascii_to_wide(data: &str) -> Vec<u16> {
@@ -162,16 +130,6 @@ fn ascii_to_wide(data: &str) -> Vec<u16> {
     result.push(0); // NULL terminator
     result
 }
-
-// fn ascii_to_utf8(data: &[u8]) -> String {
-//     let mut result = String::new();
-//     unsafe {
-//         for &b in data {
-//             result.push(char::from_u32_unchecked(b as u32));
-//         }
-//         result
-//     }
-// }
 
 pub fn resolve_hostname(hostname: &str) -> Result<Ipv4Addr> {
     let hostname = ascii_to_wide(hostname);
@@ -230,6 +188,7 @@ pub fn send_ping(dst_addr: Ipv4Addr, ttl: u8, timeout: u32) -> Result<ICMP_ECHO_
     .expect("ICMP_ECHO_REPLY layout");
     let reply_buf = unsafe { std::alloc::alloc(reply_buf_layout) };
 
+    // TODO: Call IcmpSendEcho2Ex
     let num_replies = win32_ne_zero!(IcmpSendEcho(
         icmp_handle,
         Into::<u32>::into(dst_addr).swap_bytes(),
