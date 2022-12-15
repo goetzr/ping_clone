@@ -7,6 +7,7 @@ use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::NetworkManagement::Dns::*;
 use windows::Win32::NetworkManagement::IpHelper::*;
+use windows::Win32::System::Console::*;
 use windows::Win32::System::Diagnostics::Debug::*;
 use windows::Win32::System::Memory::*;
 
@@ -216,6 +217,14 @@ pub fn send_ping(dst_addr: Ipv4Addr, ttl: u8, timeout: u32) -> Result<ICMP_ECHO_
     unsafe { std::alloc::dealloc(reply_buf, reply_buf_layout) };
 
     Ok(reply)
+}
+
+pub fn set_console_ctrl_handler(
+    handler: unsafe extern "system" fn(u32) -> BOOL,
+) -> bool {
+    unsafe {
+        SetConsoleCtrlHandler(Some(handler), true).as_bool()
+    }
 }
 
 mod test {
