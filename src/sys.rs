@@ -59,7 +59,7 @@ impl Win32Error {
 fn make_win32_error_with_code(err: u32) -> Win32Error {
     unsafe {
         let mut buf: usize = 0;
-        let sz_buf = FormatMessageW(
+        let _sz_buf = FormatMessageW(
             FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
             None,
             err,
@@ -69,10 +69,9 @@ fn make_win32_error_with_code(err: u32) -> Win32Error {
             None,
         );
         let buf_str = std::mem::transmute::<usize, *const u16>(buf);
-        let buf_str = U16CStr::from_ptr(buf_str, sz_buf as usize).unwrap();
         let w32_err = Win32Error {
             code: err,
-            msg: buf_str.to_string().unwrap(),
+            msg: wide_to_utf8(buf_str),
         };
         LocalFree(buf as isize);
         w32_err
@@ -131,6 +130,17 @@ fn ascii_to_wide(data: &str) -> Vec<u16> {
     result
 }
 
+fn wide_to_utf8(data: *const u16) -> String {
+    unsafe {
+        let mut null_term = data;
+        while *null_term != 0 {
+            null_term = null_term.add(1);
+        }
+        let len = null_term.offset_from(data);
+        String::from_utf16(std::slice::from_raw_parts(data, len as usize)).expect("invalid UTF-8)")
+    }
+}
+
 pub fn resolve_hostname(hostname: &str) -> Result<Ipv4Addr> {
     let hostname = ascii_to_wide(hostname);
     let hostname = PCWSTR::from_raw(hostname.as_ptr());
@@ -171,7 +181,7 @@ pub fn send_ping(dst_addr: Ipv4Addr, ttl: u8, timeout: u32) -> Result<ICMP_ECHO_
         })?
     };
 
-    let request_data: Vec<u8> = (0..32).into_iter().map(|n| 65 + n %26).collect();
+    let request_data: Vec<u8> = (0..32).into_iter().map(|n| 65 + n % 26).collect();
     let sz_request_data = request_data.len() * std::mem::size_of::<u8>();
     let request_options = IP_OPTION_INFORMATION {
         Ttl: ttl,
