@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-mod sys;
 mod cli;
+mod sys;
+mod ping;
 
 pub fn main() -> anyhow::Result<()> {
     /*
@@ -15,10 +16,7 @@ pub fn main() -> anyhow::Result<()> {
         -w timeout,
         -S srcaddr
      */
-    if !sys::set_console_ctrl_handler(cli::console_ctrl_handler) {
-        println!("ERROR: failed to set the console control handler.");
-        std::process::exit(1);
-    }
+    sys::set_console_ctrl_handler(cli::console_ctrl_handler)?;
     println!("Pinging...");
     loop {
         std::thread::sleep(Duration::from_millis(100));

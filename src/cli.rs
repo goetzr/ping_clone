@@ -10,6 +10,7 @@ pub unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
             std::process::exit(0);
         }
         CTRL_BREAK_EVENT => {
+            // Fn+Ctrl+P on Lenovo laptop.
             println!("CTRL-BREAK pressed");
             true.into()
         }
