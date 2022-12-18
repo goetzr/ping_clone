@@ -4,6 +4,7 @@ use std::fmt;
 use windows::Win32::NetworkManagement::IpHelper::*;
 
 use crate::sys::{icmp_create};
+use crate::Cli;
 
 #[derive(Debug)]
 pub enum Error {
@@ -23,18 +24,25 @@ impl std::error::Error for Error {}
 type Result<T> = std::result::Result<T, Error>;
 
 struct PingManager {
-    dst_addr: Ipv4Addr,
+    cli: Cli,
+    stats: PingStats,
     icmp_handle: IcmpHandle,
 }
 
 impl PingManager {
-    pub fn new(dst_addr: Ipv4Addr) -> Result<Self> {
+    pub fn new(cli: Cli) -> Result<Self> {
         let icmp_handle = icmp_create().map_err(|e| Error::Create(Box::new(e)))?;
-        Ok(PingManager { dst_addr, icmp_handle })
+        Ok(PingManager { cli, icmp_handle, stats: PingStats::new() })
     }
 }
 
 struct PingStats {
     requests_sent: u32,
     replies_rcvd: u32
+}
+
+impl PingStats {
+    fn new() -> Self {
+        PingStats { requests_sent: 0, replies_rcvd: 0 }
+    }
 }

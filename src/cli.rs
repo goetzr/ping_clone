@@ -1,4 +1,3 @@
-use clap::{Parser, Subcommand};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Console::*;
 
@@ -17,9 +16,3 @@ pub unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
         _ => false.into()
     }
 }
-
-// #[derive(Parser)]
-// //#[command(author, version, about, long_about = None)]
-// struct Cli {
-    
-// }
