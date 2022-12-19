@@ -16,3 +16,4 @@ windows = { version = "0.43.0", features = [
 ]}
 anyhow = "1.0.66"
 clap = { version = "4.0.29", features = ["derive"] }
+lazy_static = "1.4.0"

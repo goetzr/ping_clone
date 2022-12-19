@@ -98,6 +98,18 @@ macro_rules! win32_ne {
     }};
 }
 
+macro_rules! win32_eq {
+    ( $call:expr, $sentinel:pat ) => {{
+        unsafe {
+            let ret = $call;
+            match ret {
+                $sentinel => Ok(()),
+                _ => Err(make_win32_error()),
+            }
+        }
+    }};
+}
+
 macro_rules! win32_ne_zero {
     ( $call:expr ) => {
         win32_ne!($call, 0)
@@ -106,7 +118,7 @@ macro_rules! win32_ne_zero {
 
 macro_rules! win32_is_true {
     ( $call:expr ) => {
-        win32_ne!($call, true)
+        win32_eq!($call, true)
     };
 }
 

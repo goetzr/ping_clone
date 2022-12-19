@@ -8,7 +8,7 @@ use crate::Cli;
 
 #[derive(Debug)]
 pub enum Error {
-    Create(Box<dyn std::error::Error>),
+    Create(Box<dyn std::error::Error + 'static + Send + Sync>),
 }
 
 impl fmt::Display for Error {
@@ -23,7 +23,7 @@ impl std::error::Error for Error {}
 
 type Result<T> = std::result::Result<T, Error>;
 
-struct PingManager {
+pub struct PingManager {
     cli: Cli,
     stats: PingStats,
     icmp_handle: IcmpHandle,
@@ -33,6 +33,21 @@ impl PingManager {
     pub fn new(cli: Cli) -> Result<Self> {
         let icmp_handle = icmp_create().map_err(|e| Error::Create(Box::new(e)))?;
         Ok(PingManager { cli, icmp_handle, stats: PingStats::new() })
+    }
+
+    pub fn start_pinging(&self) {
+        for _ in 0.. {
+            println!("Sending ping...");
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if *crate::STOP_CHANNEL.lock().unwrap() {
+                break;
+            }
+            let mut display = crate::DISPLAY_STATS.lock().unwrap();
+            if *display {
+                *display = false;
+                println!("Displaying stats");
+            } 
+        }
     }
 }
 

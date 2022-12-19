@@ -1,10 +1,22 @@
 use std::net::Ipv4Addr;
+use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::Mutex;
+use std::thread;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use windows::Win32::Foundation::*;
+use windows::Win32::System::Console::*;
+use lazy_static::lazy_static;
 
-mod cli;
 mod sys;
 mod ping;
+
+use ping::PingManager;
+
+lazy_static! {
+    pub static ref STOP_CHANNEL: Mutex<bool> = Mutex::new(false);
+    pub static ref DISPLAY_STATS: Mutex<bool> = Mutex::new(false);
+}
 
 #[derive(Parser)]
 pub struct Cli {
@@ -37,8 +49,11 @@ pub struct Cli {
 }
 
 pub fn main() -> anyhow::Result<()> {
+    sys::set_console_ctrl_handler(console_ctrl_handler)?;
+
     let cli = Cli::parse();
-    //sys::set_console_ctrl_handler(cli::console_ctrl_handler)?;
+    let mgr = PingManager::new(cli)?;
+    mgr.start_pinging();
     
     // let hostname = "www.google.com";
     // let ttl = 100;
@@ -47,4 +62,24 @@ pub fn main() -> anyhow::Result<()> {
     // let reply = sys::send_ping(ip_addr, ttl, timeout)?;
     // println!("Reply received in {} milliseconds.", reply.RoundTripTime);
     Ok(())
+}
+
+unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
+    //println!("Control key {} pressed", ctrl_type);
+    match ctrl_type {
+        CTRL_C_EVENT => {
+            //println!("CTRL-C pressed");
+            let mut flag = STOP_CHANNEL.lock().unwrap();
+            *flag = true;
+            true.into()
+        }
+        CTRL_BREAK_EVENT => {
+            // Fn+Ctrl+P on Lenovo laptop.
+            //println!("CTRL-BREAK pressed");
+            let mut flag = DISPLAY_STATS.lock().unwrap();
+            *flag = true;
+            true.into()
+        }
+        _ => false.into()
+    }
 }
