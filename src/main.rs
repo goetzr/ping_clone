@@ -1,15 +1,15 @@
 use std::net::Ipv4Addr;
-use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread;
 
 use clap::Parser;
+use lazy_static::lazy_static;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Console::*;
-use lazy_static::lazy_static;
 
-mod sys;
 mod ping;
+mod sys;
 
 use ping::PingManager;
 
@@ -49,12 +49,15 @@ pub struct Cli {
 }
 
 pub fn main() -> anyhow::Result<()> {
+    if !unsafe { SetConsoleCtrlHandler(Some(console_ctrl_handler)) }.as_bool() {
+        Err(...)
+    }
     sys::set_console_ctrl_handler(console_ctrl_handler)?;
 
     let cli = Cli::parse();
     let mgr = PingManager::new(cli)?;
     mgr.start_pinging();
-    
+
     // let hostname = "www.google.com";
     // let ttl = 100;
     // let timeout = 4;
@@ -66,12 +69,14 @@ pub fn main() -> anyhow::Result<()> {
 
 unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
     //println!("Control key {} pressed", ctrl_type);
+    // TODO: Print ping statistics here, not in handlers.
     match ctrl_type {
         CTRL_C_EVENT => {
             //println!("CTRL-C pressed");
             let mut flag = STOP_CHANNEL.lock().unwrap();
             *flag = true;
-            true.into()
+            // Intentionally return false so the application is terminated.
+            false.into()
         }
         CTRL_BREAK_EVENT => {
             // Fn+Ctrl+P on Lenovo laptop.
@@ -80,6 +85,13 @@ unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
             *flag = true;
             true.into()
         }
-        _ => false.into()
+        _ => false.into(),
+    }
+}
+
+fn ping(cli: Cli) {
+    let mut count = cli.count;
+    while cli.until_stopped || count > 0 {
+        // Send ping
     }
 }

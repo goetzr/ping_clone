@@ -31,7 +31,17 @@ pub struct PingManager {
 
 impl PingManager {
     pub fn new(cli: Cli) -> Result<Self> {
-        let icmp_handle = icmp_create().map_err(|e| Error::Create(Box::new(e)))?;
+        let icmp_handle = unsafe { IcmpCreateFile().map_err(|e| {
+            Error
+        }) }
+        //let icmp_handle = icmp_create().map_err(|e| Error::Create(Box::new(e)))?;
+        // unsafe {
+        //     IcmpCreateFile().map_err(|e| {
+        //         Error::OpenIcmpHandle(Win32Error::new(e.code().0 as u32, e.message().to_string()))
+        //     })
+        // }
+
+        // TODO: ping statistics need to be global so the console control handler can use them.
         Ok(PingManager { cli, icmp_handle, stats: PingStats::new() })
     }
 
